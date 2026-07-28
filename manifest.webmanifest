@@ -1,0 +1,16 @@
+{
+  "name": "Pip's Reading Adventure",
+  "short_name": "Pip Reads",
+  "description": "A fun phonics game that teaches 5-year-olds to read sentences and books.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fff7ed",
+  "theme_color": "#ff7a59",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
