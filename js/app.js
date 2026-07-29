@@ -315,16 +315,25 @@ function playSoundVideos(stage, onBack, onDone) {
       void letterEl.offsetWidth; // restart animation
       letterEl.classList.add("letter-in");
       AudioEngine.sfx.whoosh();
-      await AudioEngine.speak(`This is ${label}.`);
+      await wait(700); // let the letter land before talking
+      await AudioEngine.speak(`This is ${label}.`, { rate: 0.75 });
+      await wait(600);
       if (cancelled) return;
 
       letterEl.classList.add("pulse");
-      await AudioEngine.speak(`${label} says ${PHONEME_TTS[g]}. ${PHONEME_TTS[g]}.`, { rate: 0.7 });
+      await AudioEngine.speak(`${label} says:`, { rate: 0.7 });
+      // repeat the sound three times, slowly, with room to echo
+      await AudioEngine.speakSeq(
+        [PHONEME_TTS[g], PHONEME_TTS[g], PHONEME_TTS[g]],
+        { gap: 800, rate: 0.6 }
+      );
       letterEl.classList.remove("pulse");
+      await wait(500);
       if (cancelled) return;
 
       cueEl.textContent = info.cue;
-      await AudioEngine.speak(info.cue);
+      await AudioEngine.speak(info.cue, { rate: 0.78 });
+      await wait(800);
       if (cancelled) return;
 
       for (const [word, emoji] of info.words) {
@@ -332,11 +341,15 @@ function playSoundVideos(stage, onBack, onDone) {
         const chip = el(`<div class="example-chip pop-in"><span class="ex-emoji">${emoji}</span><span class="ex-word">${word}</span></div>`);
         rowEl.appendChild(chip);
         AudioEngine.sfx.pop();
-        await AudioEngine.speak(word, { rate: 0.8, interrupt: false });
-        await wait(200);
+        await wait(350); // let the picture appear before naming it
+        await AudioEngine.speak(word, { rate: 0.7, interrupt: false });
+        await wait(750); // time to look at the picture and repeat the word
       }
       if (cancelled) return;
-      await AudioEngine.speak(`Can you say ${PHONEME_TTS[g]}? Say it with me: ${PHONEME_TTS[g]}!`, { rate: 0.75 });
+      await wait(400);
+      await AudioEngine.speak(`Can you say ${PHONEME_TTS[g]}?`, { rate: 0.7 });
+      await wait(900); // pause so the child can have a go
+      await AudioEngine.speak(`Say it with me: ${PHONEME_TTS[g]}!`, { rate: 0.65 });
     }
 
     node.querySelector("#btn-replay").addEventListener("click", () => { AudioEngine.sfx.pop(); playTimeline(); });
@@ -348,7 +361,7 @@ function playSoundVideos(stage, onBack, onDone) {
     });
     // Re-tapping the big letter replays just the sound
     letterEl.addEventListener("click", () => {
-      AudioEngine.speak(`${PHONEME_TTS[g]}`, { rate: 0.7 });
+      AudioEngine.speak(`${PHONEME_TTS[g]}`, { rate: 0.6 });
       letterEl.classList.add("pulse");
       setTimeout(() => letterEl.classList.remove("pulse"), 600);
     });

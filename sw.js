@@ -1,7 +1,7 @@
 /* Service worker: precache everything so the game works fully offline
    once installed on the iPad home screen. */
 
-const CACHE = "pip-reads-v1";
+const CACHE = "pip-reads-v2";
 const ASSETS = [
   "./",
   "./index.html",
