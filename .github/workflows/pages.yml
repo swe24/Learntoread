@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
+# The github-pages environment only allows deployments from the repository's
+# default branch. Until 'main' is made the default branch (Settings ->
+# General -> Default branch), deploys must run from the current default.
+# After switching the default to 'main', change the branch below to 'main'.
 on:
   push:
-    branches: [main]
+    branches: [claude/ipad-reading-game-kids-2frun3]
   workflow_dispatch:
 
 permissions:
