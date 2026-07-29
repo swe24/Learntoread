@@ -8,6 +8,9 @@ const AudioEngine = (() => {
   let ctx = null;
   let voice = null;
   let unlocked = false;
+  // Bumped by stop() (called on every navigation) so that long narration
+  // loops still running from a previous screen know to abort.
+  let epoch = 0;
 
   function ensureCtx() {
     if (!ctx) {
@@ -22,13 +25,17 @@ const AudioEngine = (() => {
     if (!("speechSynthesis" in window)) return;
     const voices = speechSynthesis.getVoices();
     if (!voices.length) return;
-    // Prefer friendly, high-quality English voices found on iPads
-    const prefer = ["Samantha", "Karen", "Daniel", "Moira", "Tessa"];
-    voice =
-      voices.find(v => prefer.some(p => v.name.includes(p)) && v.lang.startsWith("en")) ||
-      voices.find(v => v.lang === "en-US" && v.localService) ||
-      voices.find(v => v.lang.startsWith("en")) ||
-      voices[0];
+    // Prefer the most natural English voices available on the device.
+    // Apple ships higher-quality "Enhanced"/"Premium" variants when the
+    // user has downloaded them, so those win over the compact defaults.
+    const prefer = ["Ava", "Samantha", "Allison", "Zoe", "Karen", "Daniel", "Moira", "Tessa", "Serena"];
+    const en = voices.filter(v => v.lang && v.lang.startsWith("en"));
+    const score = v =>
+      (/premium/i.test(v.name) ? 8 : 0) +
+      (/enhanced/i.test(v.name) ? 4 : 0) +
+      (prefer.some(p => v.name.includes(p)) ? 2 : 0) +
+      (v.localService ? 1 : 0);
+    voice = en.sort((a, b) => score(b) - score(a))[0] || voices[0];
   }
 
   if ("speechSynthesis" in window) {
@@ -49,7 +56,7 @@ const AudioEngine = (() => {
   }
 
   /** Speak text; returns a promise that resolves when finished. */
-  function speak(text, { rate = 0.85, pitch = 1.15, interrupt = true } = {}) {
+  function speak(text, { rate = 0.85, pitch = 1.05, interrupt = true } = {}) {
     return new Promise(resolve => {
       if (!("speechSynthesis" in window)) return resolve();
       if (interrupt) speechSynthesis.cancel();
@@ -66,17 +73,22 @@ const AudioEngine = (() => {
     });
   }
 
-  /** Speak a list of chunks with a pause between each (for sounding out). */
+  /** Speak a list of chunks with a pause between each (for sounding out).
+      Aborts silently if stop() is called mid-sequence (e.g. navigation). */
   async function speakSeq(parts, { gap = 350, rate = 0.8, onEach = null } = {}) {
     if ("speechSynthesis" in window) speechSynthesis.cancel();
+    const e0 = epoch;
     for (let i = 0; i < parts.length; i++) {
+      if (epoch !== e0) return;
       if (onEach) onEach(i);
       await speak(parts[i], { rate, interrupt: false });
+      if (epoch !== e0) return;
       await wait(gap);
     }
   }
 
   function stop() {
+    epoch++;
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
 
@@ -111,5 +123,5 @@ const AudioEngine = (() => {
     pageTurn(){ tone(400, 0, 0.06, "triangle", 0.08); tone(500, 0.05, 0.08, "triangle", 0.08); },
   };
 
-  return { unlock, speak, speakSeq, stop, sfx, wait };
+  return { unlock, speak, speakSeq, stop, sfx, wait, epoch: () => epoch };
 })();

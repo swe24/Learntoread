@@ -121,6 +121,14 @@ function backButton(onTap) {
 function bigNext(label = "Next ➜") {
   return el(`<button class="btn-big btn-next">${label}</button>`);
 }
+/* TTS-safe form of a single word spoken on its own. A lone "I" is read as
+   the letter ("capital I") by some voices, so it becomes "eye". */
+function speakableWord(w) {
+  const clean = w.replace(/[.,!?]/g, "");
+  if (/^i$/i.test(clean)) return "eye";
+  return clean.toLowerCase();
+}
+
 function praise() {
   const lines = ["Great job!", "You did it!", "Super reading!", "Wow, amazing!", "Fantastic!", "You are a star!"];
   return lines[(Math.random() * lines.length) | 0];
@@ -275,7 +283,6 @@ function startActivity(stageIndex, key) {
    ===================================================================== */
 function playSoundVideos(stage, onBack, onDone) {
   let i = 0;
-  let cancelled = false;
 
   function showLesson() {
     const g = stage.graphemes[i];
@@ -296,7 +303,7 @@ function playSoundVideos(stage, onBack, onDone) {
           <button class="btn-big" id="btn-onward">Next ➜</button>
         </div>
       </div>`);
-    node.querySelector(".bar").prepend(backButton(() => { cancelled = true; onBack(); }));
+    node.querySelector(".bar").prepend(backButton(onBack));
     const dots = dotsRow(stage.graphemes.length);
     dots.set(i);
     node.querySelector(".dots-holder").appendChild(dots.node);
@@ -307,8 +314,12 @@ function playSoundVideos(stage, onBack, onDone) {
     const rowEl = node.querySelector("#example-row");
 
     async function playTimeline() {
-      if (cancelled) return;
+      // stop() bumps the audio epoch, which also aborts any previous
+      // timeline still narrating (a replay, or the lesson before this one)
       AudioEngine.stop();
+      const ep = AudioEngine.epoch();
+      const alive = () => AudioEngine.epoch() === ep;
+
       rowEl.innerHTML = "";
       cueEl.textContent = "";
       letterEl.classList.remove("letter-in");
@@ -316,9 +327,10 @@ function playSoundVideos(stage, onBack, onDone) {
       letterEl.classList.add("letter-in");
       AudioEngine.sfx.whoosh();
       await wait(700); // let the letter land before talking
+      if (!alive()) return;
       await AudioEngine.speak(`This is ${label}.`, { rate: 0.75 });
       await wait(600);
-      if (cancelled) return;
+      if (!alive()) return;
 
       letterEl.classList.add("pulse");
       await AudioEngine.speak(`${label} says:`, { rate: 0.7 });
@@ -329,31 +341,34 @@ function playSoundVideos(stage, onBack, onDone) {
       );
       letterEl.classList.remove("pulse");
       await wait(500);
-      if (cancelled) return;
+      if (!alive()) return;
 
       cueEl.textContent = info.cue;
       await AudioEngine.speak(info.cue, { rate: 0.78 });
       await wait(800);
-      if (cancelled) return;
+      if (!alive()) return;
 
       for (const [word, emoji] of info.words) {
-        if (cancelled) return;
+        if (!alive()) return;
         const chip = el(`<div class="example-chip pop-in"><span class="ex-emoji">${emoji}</span><span class="ex-word">${word}</span></div>`);
         rowEl.appendChild(chip);
         AudioEngine.sfx.pop();
         await wait(350); // let the picture appear before naming it
+        if (!alive()) return;
         await AudioEngine.speak(word, { rate: 0.7, interrupt: false });
         await wait(750); // time to look at the picture and repeat the word
       }
-      if (cancelled) return;
+      if (!alive()) return;
       await wait(400);
       await AudioEngine.speak(`Can you say ${PHONEME_TTS[g]}?`, { rate: 0.7 });
       await wait(900); // pause so the child can have a go
+      if (!alive()) return;
       await AudioEngine.speak(`Say it with me: ${PHONEME_TTS[g]}!`, { rate: 0.65 });
     }
 
     node.querySelector("#btn-replay").addEventListener("click", () => { AudioEngine.sfx.pop(); playTimeline(); });
     node.querySelector("#btn-onward").addEventListener("click", () => {
+      AudioEngine.stop(); // silence this lesson before moving on
       AudioEngine.sfx.pop();
       i++;
       if (i < stage.graphemes.length) showLesson();
@@ -418,12 +433,17 @@ function playBlend(stage, onBack, onDone) {
     AudioEngine.speak("Tap each sound, left to right!");
 
     node.querySelector("#btn-blend").addEventListener("click", async e => {
+      const ep = AudioEngine.epoch();
+      const alive = () => AudioEngine.epoch() === ep;
       e.target.classList.add("hidden");
       tilesEl.classList.add("blended");
       AudioEngine.sfx.whoosh();
       await AudioEngine.speakSeq(graphemes.map(g => PHONEME_TTS[g]), { gap: 150, rate: 0.7 });
+      if (!alive()) return;
       await AudioEngine.speak(word, { rate: 0.75 });
+      if (!alive()) return;
       await AudioEngine.speak(`${word}! Which picture is ${word}? Tap it!`);
+      if (!alive()) return;
       const pick = node.querySelector("#pick");
       pick.classList.remove("hidden");
       shuffle([correct, ...distractors]).forEach(em => {
@@ -549,18 +569,21 @@ function playTricky(stage, onBack, onDone) {
     const card = node.querySelector("#card");
     card.addEventListener("click", () => {
       AudioEngine.sfx.ding();
-      AudioEngine.speak(word, { rate: 0.7 });
+      AudioEngine.speak(speakableWord(word), { rate: 0.7 });
     });
 
     (async () => {
-      await AudioEngine.speak(`This word is: ${word}. It's a heart word — we just remember it! Say it with me: ${word}.`, { rate: 0.8 });
+      const ep = AudioEngine.epoch();
+      const spoken = speakableWord(word);
+      await AudioEngine.speak(`This word is: ${spoken}. It's a heart word — we just remember it! Say it with me: ${spoken}.`, { rate: 0.8 });
       await wait(400);
+      if (AudioEngine.epoch() !== ep) return; // navigated away mid-speech
       // Mini quiz: find the word among others
       const others = shuffle(
         STAGES.flatMap(s => s.tricky).filter(w => w.toLowerCase() !== word.toLowerCase())
       ).slice(0, 2);
       node.querySelector("#quiz-prompt").textContent = `Now tap the word "${word}"!`;
-      AudioEngine.speak(`Now, tap the word: ${word}!`);
+      AudioEngine.speak(`Now, tap the word: ${spoken}!`);
       const quiz = node.querySelector("#quiz");
       shuffle([word, ...others]).forEach(w => {
         const b = el(`<button class="pick-card pick-word">${w}</button>`);
@@ -568,7 +591,7 @@ function playTricky(stage, onBack, onDone) {
           if (w === word) {
             b.classList.add("right");
             AudioEngine.sfx.correct();
-            await AudioEngine.speak(`Yes! ${word}!`);
+            await AudioEngine.speak(`Yes! ${spoken}!`);
             i++;
             if (i < stage.tricky.length) showCard();
             else onDone();
@@ -617,7 +640,7 @@ function playRead(stage, onBack, onDone) {
       const b = el(`<button class="word-chip">${w}</button>`);
       b.addEventListener("click", async () => {
         b.classList.add("lit");
-        AudioEngine.speak(w.replace(/[.,!?]/g, ""), { rate: 0.75 });
+        AudioEngine.speak(speakableWord(w), { rate: 0.75 });
         tapped.add(wi);
         if (tapped.size === words.length) {
           node.querySelector("#btn-readme").classList.remove("hidden");
@@ -629,13 +652,18 @@ function playRead(stage, onBack, onDone) {
     AudioEngine.speak("Tap each word to hear it!");
 
     node.querySelector("#btn-readme").addEventListener("click", async e => {
+      const ep = AudioEngine.epoch();
+      const alive = () => AudioEngine.epoch() === ep;
       e.target.disabled = true;
       for (let wi = 0; wi < words.length; wi++) {
+        if (!alive()) return;
         wordEls[wi].classList.add("reading");
-        await AudioEngine.speak(words[wi].replace(/[.,!?]/g, ""), { rate: 0.75, interrupt: false });
+        await AudioEngine.speak(speakableWord(words[wi]), { rate: 0.75, interrupt: false });
         wordEls[wi].classList.remove("reading");
       }
+      if (!alive()) return;
       await AudioEngine.speak(sentence, { rate: 0.85 });
+      if (!alive()) return;
       e.target.disabled = false;
       const pick = node.querySelector("#pick");
       if (pick.children.length) return; // already shown
@@ -703,7 +731,7 @@ function playBook(stage, onBack, onDone) {
         const b = el(`<button class="word-chip">${w}</button>`);
         b.addEventListener("click", () => {
           b.classList.add("lit");
-          AudioEngine.speak(w.replace(/[.,!?]/g, ""), { rate: 0.75 });
+          AudioEngine.speak(speakableWord(w), { rate: 0.75 });
         });
         textEl.appendChild(b);
       });
@@ -711,12 +739,16 @@ function playBook(stage, onBack, onDone) {
 
     node.querySelector("#btn-hear").addEventListener("click", async () => {
       if (isCover) return AudioEngine.speak(book.title);
+      const ep = AudioEngine.epoch();
+      const alive = () => AudioEngine.epoch() === ep;
       const chips = [...textEl.children];
       for (let wi = 0; wi < chips.length; wi++) {
+        if (!alive()) return;
         chips[wi].classList.add("reading");
-        await AudioEngine.speak(chips[wi].textContent.replace(/[.,!?]/g, ""), { rate: 0.75, interrupt: false });
+        await AudioEngine.speak(speakableWord(chips[wi].textContent), { rate: 0.75, interrupt: false });
         chips[wi].classList.remove("reading");
       }
+      if (!alive()) return;
       AudioEngine.speak(text, { rate: 0.85 });
     });
 
